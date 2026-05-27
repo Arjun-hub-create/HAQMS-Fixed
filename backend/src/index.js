@@ -80,13 +80,17 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`=================================================`);
-  console.log(`  HAQMS BACKEND running on port ${PORT}`);
-  console.log(`  Environment: ${process.env.NODE_ENV}`);
-  console.log(`  CORS allowed origin: ${allowedOrigin}`);
-  console.log(`=================================================`);
-});
+if (process.env.NODE_ENV !== 'production' || require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`=================================================`);
+    console.log(`  HAQMS BACKEND running on port ${PORT}`);
+    console.log(`  Environment: ${process.env.NODE_ENV}`);
+    console.log(`  CORS allowed origin: ${allowedOrigin}`);
+    console.log(`=================================================`);
+  });
+}
+
+module.exports = app;
 
 // OLD CODE:
 // // Catch unhandled rejections
