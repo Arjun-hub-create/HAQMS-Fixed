@@ -383,9 +383,69 @@ This report documents the security audits, performance optimizations, stability 
 
 ---
 
+### 12. Vercel Cloud Deployment & Supabase IPv4 Pooler Integration
+* **Target Files**: [schema.prisma](file:///c:/Users/arjun/OneDrive/Documents/RESUME/HAQMS_fixed/backend/prisma/schema.prisma), [package.json](file:///c:/Users/arjun/OneDrive/Documents/RESUME/HAQMS_fixed/backend/package.json), [.gitignore](file:///c:/Users/arjun/OneDrive/Documents/RESUME/HAQMS_fixed/backend/.gitignore), and [.vercelignore](file:///c:/Users/arjun/OneDrive/Documents/RESUME/HAQMS_fixed/backend/.vercelignore)
+* **Folder Structure**: `backend/`, `backend/prisma/`
+* **Bug & Context**: In the production deployment hosted on Vercel, any client request interacting with the database (such as logging in or checking in) threw a `PrismaClientInitializationError: Can't reach database server at db.nisihxyzlkqydbovwrmb.supabase.co:5432`.
+  This blocker occurred because:
+  1. Supabase direct database connection domains utilize IPv6 address records (`AAAA`) only.
+  2. Vercel's serverless runtime environment runs under IPv4-only egress policies, which are incapable of resolving or routing requests directly to IPv6 addresses.
+  3. The local environment config (`.env`) was being uploaded to Vercel due to a missing `.vercelignore` file, overriding production variables.
+  4. CORS blocked cross-origin requests because `ALLOWED_ORIGIN` did not match the Vercel frontend domain.
+* **Fix**:
+  1. Updated the datasource definition in `schema.prisma` to support `directUrl` for migrations and database schema generation during Vercel's build phase.
+  2. Created `backend/.vercelignore` and updated `backend/.gitignore` to prevent local `.env` files from leaking to Vercel.
+  3. Located the active regional IPv4-accessible Supabase pooler node in the `ap-south-1` region (Mumbai): `aws-1-ap-south-1.pooler.supabase.com:6543`.
+  4. Constructed and injected the correct connection routing strings:
+     - `DATABASE_URL`: `postgresql://postgres.nisihxyzlkqydbovwrmb:[PASSWORD]@aws-1-ap-south-1.pooler.supabase.com:6543/postgres?pgbouncer=true`
+     - `DIRECT_URL`: `postgresql://postgres:[PASSWORD]@db.nisihxyzlkqydbovwrmb.supabase.co:5432/postgres`
+     - `ALLOWED_ORIGIN`: `https://frontend-mu-nine-12.vercel.app`
+  5. Configured the postinstall hook in `package.json` to automatically generate the Prisma client after installations during Vercel builds.
+* **Code Comparison**:
+```prisma
+/* backend/prisma/schema.prisma */
+// OLD CODE (schema.prisma: L9-13):
+9:  datasource db {
+10:   provider = "postgresql"
+11:   url      = env("DATABASE_URL")
+12: }
+
+// NEW CODE (schema.prisma: L9-14):
+9:  datasource db {
+10:   provider  = "postgresql"
+11:   url       = env("DATABASE_URL")
+12:   directUrl = env("DIRECT_URL")
+13: }
+```
+
+```json
+/* backend/package.json */
+// OLD CODE (package.json: L12-14):
+12:     "db:setup": "prisma migrate dev && node prisma/seed.js",
+13:     "build": "prisma generate"
+14:   },
+
+// NEW CODE (package.json: L12-15):
+12:     "db:setup": "prisma migrate dev && node prisma/seed.js",
+13:     "build": "prisma generate",
+14:     "postinstall": "prisma generate"
+15:   },
+```
+
+```
+/* backend/.vercelignore */
+// NEW FILE [NEW]:
+1: .env
+2: node_modules/
+```
+* **Developer Reasoning**: Cloud serverless architectures dynamically spin up ephemeral containers, making direct connection scaling impractical and subject to IPv4/IPv6 networking limitations. Utilizing an IPv4-supported transaction pooler on port `6543` with routing tags avoids egress restrictions and keeps database connection limits safe.
+
+---
+
 ## System Verification Report
 1. **Migrations & Database Seeds**: Verified. All mock tables are correctly formatted and seeded.
 2. **Next.js & Express API Dev Servers**: Concurrently active and responding.
 3. **Functional Auditing**: Checked login authentication, registration restrictions, dark mode switching, doctor worklists, and history timelines.
 
 This environment is fully operational and optimized for production.
+
